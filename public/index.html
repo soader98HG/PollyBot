@@ -1,0 +1,33 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IA Conversacional con Agora</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background-color: #f0f0f0; }
+        #controls { margin-bottom: 10px; text-align: center; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+        #status { margin-top: 10px; font-style: italic; color: #555; }
+        #dialog { width: 80%; max-w: 600px; height: 300px; border: 1px solid #ccc; background-color: white; padding: 10px; overflow-y: scroll; }
+        .user-message { text-align: right; color: blue; }
+        .ia-message { text-align: left; color: green; }
+    </style>
+</head>
+<body>
+    <h1>IA Conversacional con Agora</h1>
+    <div id="controls">
+        <button id="connectBtn">Conectar</button>
+        <div id="status">Desconectado</div>
+        <div id="mic-status" style="margin-top: 10px; font-weight: bold;">Micrófono: Inactivo</div>
+        <button id="toggleAmbientSoundBtn" style="margin-top: 10px;">Silenciar Ambiente</button>
+    </div>
+    <div id="dialog">
+        <p class="ia-message">Presiona "Conectar" para empezar.</p>
+    </div>
+
+    <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
