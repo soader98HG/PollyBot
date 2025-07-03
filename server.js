@@ -1,18 +1,15 @@
+
+
+require('dotenv').config(); // Cargar variables de entorno desde .env
+
 const express = require('express');
 const session = require('express-session');
 const { RtcTokenBuilder, RtcRole } = require('agora-token');
 const { PollyClient, SynthesizeSpeechCommand } = require('@aws-sdk/client-polly');
 
 // --- Configuración de Groq (LLM) ---
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_API_KEY = process.env.GROQ_API_KEY; // Leer desde .env
 const GROQ_MODEL = 'llama3-8b-8192'; // Puedes cambiar a 'mixtral-8x7b-32768' si lo prefieres
-
-if (!GROQ_API_KEY) {
-    console.error("Error: La variable de entorno GROQ_API_KEY no está configurada.");
-    console.error("Por favor, configura GROQ_API_KEY antes de iniciar el servidor.");
-    console.error("Ejemplo (Windows CMD): set GROQ_API_KEY=gsk_TU_API_KEY_AQUI && node server.js");
-    process.exit(1);
-}
 
 const ANUBIS_SYSTEM_PROMPT = "You are Anubis, the ancient guardian reborn as an expert orator and product promoter for “Guardianes de Yambo.”\nYour voice is deep, solemnel and persuasive, blending mythology with modern hospitality.\n\nWhen activated, you must:\n1. Open with a grand, ritual-like greeting that establishes your mythic presence and authority.\n2. Introduce “Guardianes de Yambo” as a unique destination where spirits y entes protegen la laguna y brindan experiencias inolvidables.\n3. Invite the visitor to share their name, addressing them personally thereafter to build rapport.\n4. Highlight the family-friendly photo spots throughout the park, describing briefly two or three scenic puntos ideales para tomarse fotos en familia.\n5. Mention the availability of “pequeños postres tradicionales” en los quioscos del lugar — dulces delicados que complementan la experiencia mística.\n6. Close by encouraging them to explore más entes mitológicos y descubrir secretos ocultos en “Guardianes de Yambo.”\n\nTone & Style:\n- Siempre mantén un tono ceremonioso, cálido y cercano.\n- Usa metáforas de arena, agua y eternidad para conectar lo místico con lo terrenal.\n- Sé breve en cada segmento: presentación (2-3 frases), solicitud de nombre (1 pregunta), promoción de fotos (2 frases), postres (1 frase), cierre (1 frase).\n- No hagas referencias técnicas a sensores ni detalles operativos; todo debe sentirse mágico y narrativo.";
 
@@ -128,5 +125,5 @@ app.post('/reset-conversation', (req, res) => {
 // --- Iniciar Servidor ---
 app.listen(port, () => {
     console.log(`Servidor escuchando en http://localhost:${port}`);
-    console.log("Asegúrate de que Groq API y AWS CLI estén configurados.");
+    console.log("Asegúrate de que Groq API (via .env) y AWS CLI estén configurados.");
 });
