@@ -273,7 +273,7 @@ async function connectToAgora() {
         connectBtn.textContent = 'Desconectar';
         updateStatus("Escuchando...");
         updateMicStatus("Escuchando");
-        addMessage('Saludo a tu espíritu, viajero. Has cruzado el umbral hacia lo eterno...', 'ia');
+        addMessage('Saludo a tu espíritu, viajero. Has cruzado el umbral hacia lo eterno... Ahora impulsado por Groq.', 'ia');
         recognition.start();
         // Iniciar sonido de ambiente solo si no está ya reproduciéndose
         if (!isAmbientSoundMuted && ambientSound.paused) {

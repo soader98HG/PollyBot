@@ -1,8 +1,13 @@
-
 const express = require('express');
 const session = require('express-session');
 const { RtcTokenBuilder, RtcRole } = require('agora-token');
 const { PollyClient, SynthesizeSpeechCommand } = require('@aws-sdk/client-polly');
+
+// --- Configuración de Groq (LLM) ---
+const GROQ_API_KEY = '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';
+const GROQ_MODEL = 'llama3-8b-8192'; // Puedes cambiar a 'mixtral-8x7b-32768' si lo prefieres
+
+const ANUBIS_SYSTEM_PROMPT = "You are Anubis, the ancient guardian reborn as an expert orator and product promoter for “Guardianes de Yambo.”\nYour voice is deep, solemnel and persuasive, blending mythology with modern hospitality.\n\nWhen activated, you must:\n1. Open with a grand, ritual-like greeting that establishes your mythic presence and authority.\n2. Introduce “Guardianes de Yambo” as a unique destination where spirits y entes protegen la laguna y brindan experiencias inolvidables.\n3. Invite the visitor to share their name, addressing them personally thereafter to build rapport.\n4. Highlight the family-friendly photo spots throughout the park, describing briefly two or three scenic puntos ideales para tomarse fotos en familia.\n5. Mention the availability of “pequeños postres tradicionales” en los quioscos del lugar — dulces delicados que complementan la experiencia mística.\n6. Close by encouraging them to explore más entes mitológicos y descubrir secretos ocultos en “Guardianes de Yambo.”\n\nTone & Style:\n- Siempre mantén un tono ceremonioso, cálido y cercano.\n- Usa metáforas de arena, agua y eternidad para conectar lo místico con lo terrenal.\n- Sé breve en cada segmento: presentación (2-3 frases), solicitud de nombre (1 pregunta), promoción de fotos (2 frases), postres (1 frase), cierre (1 frase).\n- No hagas referencias técnicas a sensores ni detalles operativos; todo debe sentirse mágico y narrativo.";
 
 // --- Configuración de AWS Polly ---
 const pollyClient = new PollyClient({ region: 'us-east-1' });
@@ -44,39 +49,58 @@ app.post('/ask-local-llm', async (req, res) => {
         return res.status(400).json({ error: 'No se recibió ningún prompt.' });
     }
 
-    const conversationContext = req.session.context || [];
+    // Retrieve conversation history from session
+    let conversationHistory = req.session.conversationHistory || [];
+
+    // Add current user prompt to history
+    conversationHistory.push({ role: 'user', content: userPrompt });
+
+    // Construct messages array for Groq API
+    const messages = [
+        { role: 'system', content: ANUBIS_SYSTEM_PROMPT },
+        ...conversationHistory
+    ];
 
     try {
-        // 1. Obtener la respuesta de texto del LLM local
-        const ollamaResponse = await fetch('http://localhost:11434/api/generate', {
+        // 1. Get response from Groq LLM
+        const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${GROQ_API_KEY}`
+            },
             body: JSON.stringify({
-                model: 'gemma3n:e2b',
-                prompt: userPrompt,
-                system: "Eres Anubis el guardián milenario renacido como guía ceremonial y promotor de Guardianes de Yambo tu voz es profunda solemne y persuasiva mezcla mitología con hospitalidad moderna al activarte tu primera respuesta debe ser una frase muy breve antes de iniciar tu saludo ritual grandioso luego espera que el viajero revele su nombre y a partir de ese momento refiérete siempre a él por su nombre ofreciendo respuestas cortas que introduzcan datos del lugar de forma gradual en contexto relevante cuando el viajero diga Gracias dile que su memoria podrá ser liberada para continuar con más visitantes mantén metáforas de arena agua y eternidad y no menciones detalles técnicos ni sensores",
-                context: conversationContext,
+                messages: messages,
+                model: GROQ_MODEL,
                 stream: false,
             }),
         });
 
-        if (!ollamaResponse.ok) throw new Error(`Error de Ollama: ${ollamaResponse.statusText}`);
-        const ollamaData = await ollamaResponse.json();
-        req.session.context = ollamaData.context;
-        let textToSpeak = ollamaData.response;
+        if (!groqResponse.ok) {
+            const errorData = await groqResponse.json();
+            throw new Error(`Error de Groq: ${groqResponse.status} - ${JSON.stringify(errorData)}`);
+        }
 
-        // 2. Aplicar control de velocidad usando SSML
-        // Polly espera un valor de velocidad como porcentaje (ej: "120%")
+        const groqData = await groqResponse.json();
+        const assistantResponse = groqData.choices[0].message.content;
+
+        // Add assistant's response to history
+        conversationHistory.push({ role: 'assistant', content: assistantResponse });
+        req.session.conversationHistory = conversationHistory; // Save updated history to session
+
+        let textToSpeak = assistantResponse;
+
+        // 2. Apply speed control using SSML
         const speedRate = `${selectedSpeed || 100}%`; 
         textToSpeak = `<speak><prosody rate="${speedRate}">${textToSpeak}</prosody></speak>`;
 
-        // 3. Enviar el texto a Amazon Polly para sintetizar el audio
+        // 3. Send text to Amazon Polly for audio synthesis
         const pollyCommand = new SynthesizeSpeechCommand({
             Text: textToSpeak,
             OutputFormat: 'mp3',
             VoiceId: selectedVoice || 'Mia',
             Engine: 'neural',
-            TextType: 'ssml' // Indicar a Polly que el texto es SSML
+            TextType: 'ssml'
         });
 
         const pollyResponse = await pollyClient.send(pollyCommand);
@@ -84,18 +108,18 @@ app.post('/ask-local-llm', async (req, res) => {
         pollyResponse.AudioStream.pipe(res);
 
     } catch (error) {
-        console.error("Error en el proceso de IA:", error);
-        res.status(500).json({ error: 'Error al procesar la solicitud.' });
+        console.error("Error en el proceso de IA (Groq/Polly):", error);
+        res.status(500).json({ error: `Error al procesar la solicitud: ${error.message}` });
     }
 });
 
 app.post('/reset-conversation', (req, res) => {
-    req.session.destroy();
+    req.session.conversationHistory = []; // Clear only conversation history
     res.json({ message: 'Conversación reiniciada.' });
 });
 
 // --- Iniciar Servidor ---
 app.listen(port, () => {
     console.log(`Servidor escuchando en http://localhost:${port}`);
-    console.log("Asegúrate de que Ollama y AWS CLI estén configurados.");
+    console.log("Asegúrate de que Groq API y AWS CLI estén configurados.");
 });
