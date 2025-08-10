@@ -2,6 +2,7 @@
 
 require('dotenv').config(); // Cargar variables de entorno desde .env
 
+
 const express = require('express');
 const session = require('express-session');
 const { RtcTokenBuilder, RtcRole } = require('agora-token');
