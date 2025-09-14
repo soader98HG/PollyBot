@@ -1,20 +1,62 @@
-const connectBtn = document.getElementById('connectBtn');
 const dialog = document.getElementById('dialog');
 const statusDiv = document.getElementById('status');
 const micStatusDiv = document.getElementById('mic-status');
 const toggleAmbientSoundBtn = document.getElementById('toggleAmbientSoundBtn');
+const voiceSelect = document.getElementById('voice-select');
+const reconnectBtn = document.getElementById('reconnect-btn');
 
 // --- Valores preestablecidos ---
-const DEFAULT_VOICE = 'Sergio';
+let selectedVoice = 'Lucia'; // Default voice
 const DEFAULT_SPEED = 80;
 
 // --- Lógica de la Aplicación ---
-let agoraClient = null;
-let localAudioTrack = null;
-let isConnected = false;
 let isIaSpeaking = false;
 let isProcessing = false;
 let recognitionActive = false;
+
+// --- Gestión de Voces ---
+async function playGoodbyeAndReload() {
+    try {
+        const response = await fetch(`/api/goodbye-speech?voice=${selectedVoice}`);
+        if (!response.ok) {
+            throw new Error('Failed to fetch goodbye speech');
+        }
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audio.onended = () => location.reload();
+        safePlay(audio);
+    } catch (error) {
+        console.error('Error playing goodbye speech:', error);
+        location.reload(); // Reload even if there is an error
+    }
+}
+
+async function populateVoices() {
+    try {
+        const response = await fetch('/api/voices');
+        const voices = await response.json();
+        voiceSelect.innerHTML = '';
+        voices.forEach(voice => {
+            const option = document.createElement('option');
+            option.value = voice.Id;
+            option.textContent = `${voice.Name} (${voice.LanguageName})`;
+            voiceSelect.appendChild(option);
+        });
+        voiceSelect.value = selectedVoice;
+    } catch (error) {
+        console.error('Error al obtener las voces:', error);
+    }
+}
+
+voiceSelect.addEventListener('change', () => {
+    selectedVoice = voiceSelect.value;
+});
+
+reconnectBtn.addEventListener('click', () => {
+    location.reload();
+});
+
 
 // --- Función segura para reproducir audio ---
 async function safePlay(audioElement) {
@@ -44,7 +86,7 @@ recognition.interimResults = false;
 
 // --- Funciones de Control del Micrófono ---
 function startRecognition() {
-    if (isConnected && !recognitionActive && !isIaSpeaking && !isProcessing) {
+    if (!recognitionActive && !isIaSpeaking && !isProcessing) {
         try {
             recognition.start();
         } catch (e) { /* Ignorar error si ya está iniciado */ }
@@ -68,12 +110,8 @@ function addMessage(text, sender) {
     dialog.scrollTop = dialog.scrollHeight;
 }
 
-function fadeOut(audioElement, duration, callback) {
-    // ... (sin cambios)
-}
-
 function speak(audioBlob, textToDisplay) {
-    if (!suspenseSound.paused) fadeOut(suspenseSound, 3000);
+    if (!suspenseSound.paused) suspenseSound.pause();
     if (!isAmbientSoundMuted) {
         safePlay(ambientSound);
         ambientSound.volume = AMBIENT_VOLUME_LOW;
@@ -87,18 +125,17 @@ function speak(audioBlob, textToDisplay) {
     const audioUrl = URL.createObjectURL(audioBlob);
     const audio = new Audio(audioUrl);
 
-    audio.onended = () => {
+    const handleSpeechEnd = () => {
         isIaSpeaking = false;
         if (!isAmbientSoundMuted) ambientSound.volume = AMBIENT_VOLUME_NORMAL;
         startRecognition();
         URL.revokeObjectURL(audioUrl);
     };
+
+    audio.onended = handleSpeechEnd;
     audio.onerror = (e) => {
-        console.error("Error al reproducir el audio:", e);
-        isIaSpeaking = false;
-        if (!isAmbientSoundMuted) ambientSound.volume = AMBIENT_VOLUME_NORMAL;
-        updateStatus("Error de audio");
-        startRecognition();
+        console.error('Error al reproducir el audio.', e);
+        handleSpeechEnd();
     };
 
     safePlay(audio);
@@ -112,12 +149,11 @@ recognition.onstart = () => {
 };
 recognition.onend = () => { 
     recognitionActive = false; 
-    if (isConnected && !isIaSpeaking && !isProcessing) startRecognition(); 
+    if (!isIaSpeaking && !isProcessing) startRecognition(); 
 };
 recognition.onerror = (event) => {
     if (event.error !== 'no-speech' && event.error !== 'aborted') {
-        console.error("Error de reconocimiento:", event.error);
-        updateStatus("Error de reconocimiento");
+        console.error('Error de reconocimiento de voz.', event.error);
     }
     recognitionActive = false;
 };
@@ -143,14 +179,18 @@ async function handleCommand(prompt) {
         const resetPhrases = ['adios', 'gracias', 'hasta luego', 'terminar', 'reiniciar', 'olvida todo'];
         if (resetPhrases.some(phrase => prompt.includes(phrase))) {
             await fetch('/reset-conversation', { method: 'POST' });
-            addMessage("Entendido. Mi memoria se ha purificado.", 'ia');
-            return;
-        }
+            addMessage("DE NADA", 'ia');
+            await playGoodbyeAndReload();
+        } else {
 
         const response = await fetch('/ask-local-llm', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt, voice: DEFAULT_VOICE, speed: DEFAULT_SPEED }),
+            body: JSON.stringify({ 
+                prompt, 
+                voice: selectedVoice, 
+                speed: DEFAULT_SPEED
+            }),
         });
 
         if (!response.ok) {
@@ -160,10 +200,11 @@ async function handleCommand(prompt) {
 
         const audioBlob = await response.blob();
         speak(audioBlob, "[Respuesta de audio]");
+        }
 
     } catch (error) {
-        console.error("Error en handleCommand:", error);
-        addMessage("Lo siento, no pude procesar tu solicitud.", 'ia');
+        console.error('No se pudo procesar la solicitud.', error);
+        addMessage("Lo siento, no pude proceser tu solicitud.", 'ia');
     } finally {
         isProcessing = false;
         if (!isAmbientSoundMuted) {
@@ -172,65 +213,9 @@ async function handleCommand(prompt) {
         }
         suspenseSound.pause();
         suspenseSound.currentTime = 0;
-        startRecognition();
     }
 }
 
-async function connectToAgora() {
-    if (isConnected) return;
-    try {
-        updateStatus("Conectando...");
-        const response = await fetch('/get-token');
-        const { token, appId, channel } = await response.json();
-
-        agoraClient = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
-        await agoraClient.join(appId, channel, token, null);
-
-        localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack();
-        await agoraClient.publish([localAudioTrack]);
-
-        agoraClient.on('user-published', (user, mediaType) => {
-            if (mediaType === 'audio') user.audioTrack.play();
-        });
-
-        isConnected = true;
-        connectBtn.textContent = 'Desconectar';
-        addMessage('Conectado. Habla ahora.', 'ia');
-        startRecognition();
-
-        if (!isAmbientSoundMuted && ambientSound.paused) safePlay(ambientSound);
-
-    } catch (error) {
-        console.error('Error al conectar con Agora:', error);
-        addMessage('Error al conectar. Revisa la consola.', 'ia');
-        updateStatus("Error de conexión");
-    }
-}
-
-async function disconnectFromAgora() {
-    if (!isConnected) return;
-
-    stopRecognition();
-    if (localAudioTrack) {
-        localAudioTrack.stop();
-        localAudioTrack.close();
-    }
-    if (agoraClient) await agoraClient.leave();
-
-    isConnected = false;
-    isIaSpeaking = false;
-    isProcessing = false;
-    connectBtn.textContent = 'Conectar';
-    updateStatus("Desconectado");
-    addMessage('Desconectado.', 'ia');
-    ambientSound.pause();
-    suspenseSound.pause();
-}
-
-connectBtn.onclick = () => {
-    if (isConnected) disconnectFromAgora();
-    else connectToAgora();
-};
 
 toggleAmbientSoundBtn.addEventListener('click', () => {
     isAmbientSoundMuted = !isAmbientSoundMuted;
@@ -242,3 +227,9 @@ toggleAmbientSoundBtn.addEventListener('click', () => {
         toggleAmbientSoundBtn.textContent = 'Silenciar Ambiente';
     }
 });
+
+// Iniciar la aplicación
+addMessage('Habla ahora.', 'ia');
+startRecognition();
+if (!isAmbientSoundMuted && ambientSound.paused) safePlay(ambientSound);
+populateVoices();
